@@ -281,66 +281,78 @@ export function Dashboard({
 
   // --- WHATSAPP CONFIRMAÇÃO / LEMBRETE ---
   function sendWhatsAppMessage(
-    a: Appointment,
-    tipo: 'confirmacao' | 'lembrete',
-  ) {
-    if (!a.phone) {
-      alert('Este agendamento não tem telefone cadastrado.');
-      return;
-    }
-
-    const service = services.find((s) => s.id === a.serviceId);
-    const serviceName = service?.name ?? 'serviço';
-    const price = service?.price ?? 0;
-
-    const dateObj = new Date(a.date + 'T' + a.time);
-    const dataStr = dateObj.toLocaleDateString('pt-BR');
-    const horaStr = a.time;
-
-    const mensagens = {
-      confirmacao: ` ✨STUDIO VICTORIA FREITAS✨
-      
-      Olá, *${a.clientName}*! 💅✨
-
-📅 Data: ${dataStr}
-⏰ Horário: ${horaStr}
-💖 Serviço: ${serviceName}
-💵 Valor: R$ ${price.toFixed(2).replace('.', ',')}
-
-✅Marcadinho minha gatinha.    *Aguardo anciosamente 😊 
-
-📍R. Marechal Floriano Peixoto 
-  n°448,Neves- sala 09
- Ponto de referência: encima do bar Baixo Neves
-
-✨METODOS DE PAGAMENTO :
-Dinheiro,Qr Code 
-Cartão: crédito e débito
-(taxinha de $4)
-Pix:21 97606-2557 (celular)
- Victoria de Freitas Liberal - Nubank
-
-🚨RECADO🚨
--Tolerância de 15 minutos.
--Em caso de desistencia me avise
-o quanto antes,não deixe pra cima da hora.`,
-
-      lembrete: `Olá, *${a.clientName}*! 💅✨
-
-Passando para te lembrar do seu atendimento amanhã ❤️
-📅 Data: ${dataStr}
-⏰ Horário: ${horaStr}
-💖 Serviço: ${serviceName}
-
-Qualquer imprevisto, só avisar!
-Até amanhã 😊`,
-    };
-
-    const msg = encodeURIComponent(mensagens[tipo]);
-    const cleanPhone = a.phone.replace(/\D/g, '');
-    const url = `https://wa.me/55${cleanPhone}?text=${msg}`;
-    window.open(url, '_blank');
+  a: Appointment,
+  tipo: 'confirmacao' | 'lembrete',
+) {
+  if (!a.phone) {
+    alert('Este agendamento não tem telefone cadastrado.');
+    return;
   }
+
+  const service = services.find((s) => s.id === a.serviceId);
+  const serviceName = service?.name ?? 'serviço';
+  const price = service?.price ?? 0;
+
+  const dataStr = new Date(a.date).toLocaleDateString('pt-BR');
+  const horaStr = a.time;
+
+  const mensagemConfirmacao =
+`STUDIO VICTORIA FREITAS
+
+Olá, ${a.clientName}!
+
+SEU AGENDAMENTO ESTÁ CONFIRMADO.
+
+Data: ${dataStr}
+Horário: ${horaStr}
+Serviço: ${serviceName}
+Valor: R$ ${price.toFixed(2).replace('.', ',')}
+
+Marcadinho, minha gatinha.
+Aguardo ansiosamente!
+
+Endereço:
+R. Marechal Floriano Peixoto
+n°448, Neves - sala 09
+Ponto de referência: em cima do bar Baixo Neves
+
+Métodos de pagamento:
+- Dinheiro
+- Pix
+- Qr Code
+- Cartão: crédito e débito (taxa R$ 4,00)
+
+Pix (celular):
+21 97606-2557
+Victoria de Freitas Liberal - Nubank
+
+Recado:
+- Tolerância de 15 minutos.
+- Em caso de desistência, avise com antecedência.`;
+
+  const mensagemLembrete =
+`STUDIO VICTORIA FREITAS
+
+Olá, ${a.clientName}!
+
+Só passando para lembrar do seu atendimento.
+
+Data: ${dataStr}
+Horário: ${horaStr}
+Serviço: ${serviceName}
+
+Qualquer imprevisto, é só avisar.`;
+
+  const texto = tipo === 'confirmacao'
+    ? mensagemConfirmacao
+    : mensagemLembrete;
+
+  const cleanPhone = a.phone.replace(/\D/g, '');
+  const url = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(texto)}`;
+  window.open(url, '_blank');
+}
+
+
 
   function handleSendWhatsAppConfirm(a: Appointment) {
     sendWhatsAppMessage(a, 'confirmacao');
