@@ -8,8 +8,15 @@ type DashboardProps = {
   onAddService: (service: Omit<Service, 'id'>) => void;
   onUpdateService: (id: string, service: Omit<Service, 'id'>) => void;
   onDeleteService: (id: string) => void;
-  onAddAppointment: (appointment: Omit<Appointment, 'id'>) => void;
-  onUpdateAppointment: (id: string, appointment: Omit<Appointment, 'id'>) => void;
+  onAddAppointment: (
+    appointment: Omit<Appointment, 'id'>,
+    serviceIds: string[],
+  ) => void;
+  onUpdateAppointment: (
+    id: string,
+    appointment: Omit<Appointment, 'id'>,
+    serviceIds: string[],
+  ) => void;
   onDeleteAppointment: (id: string) => void;
   onToggleAppointmentAttendance: (id: string) => void;
   onLogout: () => void;
@@ -23,60 +30,34 @@ type CalendarDay = {
   isSelected: boolean;
 };
 
-function pad(num: number): string {
-  return num.toString().padStart(2, '0');
-}
-
-function generateTimeOptions(): string[] {
-  const result: string[] = [];
-  let hour = 7;
-  let minute = 30;
-
-  while (true) {
-    result.push(`${pad(hour)}:${pad(minute)}`);
-    if (hour === 19 && minute === 30) break;
-    minute += 30;
-    if (minute === 60) {
-      minute = 0;
-      hour++;
-    }
-  }
-  return result;
+function pad(n: number): string {
+  return n.toString().padStart(2, '0');
 }
 
 function getTodayStr(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
-    now.getDate(),
-  )}`;
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function getCalendarDays(
-  monthStr: string,
+function generateCalendarDays(
+  year: number,
+  month: number,
   selected: string,
   todayStr: string,
 ): CalendarDay[] {
-  const [year, month] = monthStr.split('-').map((n) => Number(n));
-  const firstOfMonth = new Date(year, month - 1, 1);
-  const firstWeekday = firstOfMonth.getDay();
-  const lastOfMonth = new Date(year, month, 0);
-  const daysInMonth = lastOfMonth.getDate();
-
-  const prevLast = new Date(year, month - 1, 0);
-  const prevYear = prevLast.getFullYear();
-  const prevMonthNum = prevLast.getMonth() + 1;
-  const prevDays = prevLast.getDate();
-
-  const nextFirst = new Date(year, month, 1);
-  const nextYear = nextFirst.getFullYear();
-  const nextMonthNum = nextFirst.getMonth() + 1;
-
   const days: CalendarDay[] = [];
 
+  const firstDayOfMonth = new Date(year, month - 1, 1);
+  const firstWeekday = firstDayOfMonth.getDay(); // 0 (Domingo) a 6 (Sábado)
+
   // Dias do mês anterior
+  const prevMonthLastDay = new Date(year, month - 1, 0).getDate();
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+
   for (let i = firstWeekday - 1; i >= 0; i--) {
-    const dayNumber = prevDays - i;
-    const dateStr = `${prevYear}-${pad(prevMonthNum)}-${pad(dayNumber)}`;
+    const dayNumber = prevMonthLastDay - i;
+    const dateStr = `${prevYear}-${pad(prevMonth)}-${pad(dayNumber)}`;
     days.push({
       dateStr,
       dayNumber,
@@ -87,6 +68,7 @@ function getCalendarDays(
   }
 
   // Dias do mês atual
+  const daysInMonth = new Date(year, month, 0).getDate();
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${pad(month)}-${pad(d)}`;
     days.push({
@@ -99,6 +81,8 @@ function getCalendarDays(
   }
 
   // Dias do próximo mês
+  const nextMonthNum = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
   let nextDay = 1;
   while (days.length < 42) {
     const dateStr = `${nextYear}-${pad(nextMonthNum)}-${pad(nextDay)}`;
@@ -113,6 +97,23 @@ function getCalendarDays(
   }
 
   return days;
+}
+
+function generateTimeOptions(): string[] {
+  const times: string[] = [];
+  const startHour = 9;
+  const endHour = 19;
+  const intervalMinutes = 30;
+
+  for (let hour = startHour; hour <= endHour; hour++) {
+    for (let minute = 0; minute < 60; minute += intervalMinutes) {
+      const h = pad(hour);
+      const m = pad(minute);
+      times.push(`${h}:${m}`);
+    }
+  }
+
+  return times;
 }
 
 export function Dashboard({
@@ -144,7 +145,10 @@ export function Dashboard({
 
     appointments.forEach((a) => {
       const s = services.find((s) => s.id === a.serviceId);
-      const price = s?.price ?? 0;
+      const price =
+        typeof a.totalPrice === 'number' && a.totalPrice > 0
+          ? a.totalPrice
+          : s?.price ?? 0;
       if (a.date === selectedDate) {
         totalDay += price;
         countDay++;
@@ -171,6 +175,15 @@ export function Dashboard({
   const [date, setDate] = useState(selectedDate);
   const [time, setTime] = useState('');
   const [serviceId, setServiceId] = useState('');
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+
+  const totalSelectedServicesPrice = useMemo(() => {
+    return selectedServiceIds.reduce((total, id) => {
+      const s = services.find((srv) => srv.id === id);
+      return total + (s?.price ?? 0);
+    }, 0);
+  }, [selectedServiceIds, services]);
+
   const [paymentMethod, setPaymentMethod] = useState('');
   const [notes, setNotes] = useState('');
   const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(
@@ -181,7 +194,7 @@ export function Dashboard({
     if (!editingAppointmentId) {
       setDate(selectedDate);
     }
-  }, [selectedDate, editingAppointmentId]);
+  }, [editingAppointmentId, selectedDate]);
 
   function resetAppointmentForm() {
     setClientName('');
@@ -189,6 +202,7 @@ export function Dashboard({
     setDate(selectedDate);
     setTime('');
     setServiceId('');
+    setSelectedServiceIds([]);
     setPaymentMethod('');
     setNotes('');
     setEditingAppointmentId(null);
@@ -196,22 +210,38 @@ export function Dashboard({
 
   function handleSubmitAppointment(e: FormEvent) {
     e.preventDefault();
-    if (!clientName.trim() || !serviceId || !time || !date) return;
+
+    const chosenServiceId = selectedServiceIds[0] || serviceId;
+
+    if (!clientName.trim() || !chosenServiceId || !time || !date) return;
+
+    const selectedServices = selectedServiceIds
+      .map((id) => services.find((s) => s.id === id))
+      .filter((s): s is Service => !!s);
+
+    const totalPrice =
+      selectedServices.length > 0
+        ? selectedServices.reduce((acc, s) => acc + s.price, 0)
+        : (services.find((s) => s.id === chosenServiceId)?.price ?? 0);
 
     const data: Omit<Appointment, 'id'> = {
       clientName: clientName.trim(),
       phone: phone.trim(),
       date,
       time,
-      serviceId,
+      serviceId: chosenServiceId,
       paymentMethod: paymentMethod.trim(),
       notes: notes.trim(),
+      totalPrice,
+      attended: editingAppointmentId
+        ? appointments.find((a) => a.id === editingAppointmentId)?.attended ?? false
+        : false,
     };
 
     if (editingAppointmentId) {
-      onUpdateAppointment(editingAppointmentId, data);
+      onUpdateAppointment(editingAppointmentId, data, selectedServiceIds);
     } else {
-      onAddAppointment(data);
+      onAddAppointment(data, selectedServiceIds);
     }
 
     resetAppointmentForm();
@@ -226,6 +256,7 @@ export function Dashboard({
     setDate(a.date);
     setTime(a.time);
     setServiceId(a.serviceId);
+    setSelectedServiceIds(a.serviceId ? [a.serviceId] : []);
     setPaymentMethod(a.paymentMethod);
     setNotes(a.notes);
 
@@ -237,10 +268,6 @@ export function Dashboard({
     if (!window.confirm('Deseja realmente excluir este agendamento?')) return;
 
     onDeleteAppointment(id);
-
-    if (editingAppointmentId === id) {
-      resetAppointmentForm();
-    }
   }
 
   // --- BLOQUEIO DE HORÁRIOS JÁ OCUPADOS ---
@@ -254,11 +281,36 @@ export function Dashboard({
     [appointments, date, editingAppointmentId],
   );
 
+  function toggleServiceSelection(id: string) {
+    setSelectedServiceIds((prev) => {
+      const exists = prev.includes(id);
+
+      if (exists) {
+        const updated = prev.filter((sId) => sId !== id);
+        setServiceId(updated[0] ?? '');
+        return updated;
+      }
+
+      if (prev.length >= 5) {
+        alert('Você pode selecionar no máximo 5 serviços por agendamento.');
+        return prev;
+      }
+
+      const updated = [...prev, id];
+
+      if (!serviceId) {
+        setServiceId(updated[0]);
+      }
+
+      return updated;
+    });
+  }
+
   // --- BACKUP (EXPORTAR JSON) ---
   function handleExportBackup() {
     const dataBackup = {
       exportedAt: new Date().toISOString(),
-      userName,
+      selectedDate,
       services,
       appointments,
     };
@@ -281,78 +333,76 @@ export function Dashboard({
 
   // --- WHATSAPP CONFIRMAÇÃO / LEMBRETE ---
   function sendWhatsAppMessage(
-  a: Appointment,
-  tipo: 'confirmacao' | 'lembrete',
-) {
-  if (!a.phone) {
-    alert('Este agendamento não tem telefone cadastrado.');
-    return;
-  }
+    a: Appointment,
+    tipo: 'confirmacao' | 'lembrete',
+  ) {
+    if (!a.phone) {
+      alert('Este agendamento não tem telefone cadastrado.');
+      return;
+    }
 
-  const service = services.find((s) => s.id === a.serviceId);
-  const serviceName = service?.name ?? 'serviço';
-  const price = service?.price ?? 0;
+    const service = services.find((s) => s.id === a.serviceId);
+    const serviceName = service?.name ?? 'serviço';
 
-  const dataStr = new Date(a.date).toLocaleDateString('pt-BR');
-  const horaStr = a.time;
+    const basePrice = service?.price ?? 0;
+    const price =
+      typeof a.totalPrice === 'number' && a.totalPrice > 0
+        ? a.totalPrice
+        : basePrice;
 
-  const mensagemConfirmacao =
-`STUDIO VICTORIA FREITAS
+    const [year, month, day] = a.date.split("-");
+    const dataStr = `${day}/${month}/${year}`;
+    const horaStr = a.time;
 
-Olá, ${a.clientName}!
+    const mensagemConfirmacao = `STUDIO VICTORIA FREITAS
 
-SEU AGENDAMENTO ESTÁ CONFIRMADO.
+Olá, ${a.clientName}! 
 
 Data: ${dataStr}
 Horário: ${horaStr}
 Serviço: ${serviceName}
 Valor: R$ ${price.toFixed(2).replace('.', ',')}
 
-Marcadinho, minha gatinha.
-Aguardo ansiosamente!
-
+Qualquer imprevisto é só avisar por aqui, tá bom? 
 Endereço:
-R. Marechal Floriano Peixoto
-n°448, Neves - sala 09
-Ponto de referência: em cima do bar Baixo Neves
+R. Marechal Floriano Peixoto, 448 - Sala 09, Neves
+Em cima do bar Baixo Neves
 
-Métodos de pagamento:
+Formas de pagamento:
 - Dinheiro
-- Pix
-- Qr Code
-- Cartão: crédito e débito (taxa R$ 4,00)
-
-Pix (celular):
-21 97606-2557
-Victoria de Freitas Liberal - Nubank
+- PIX: 21 97606-2557 (Victoria de Freitas Liberal - Nubank)
+- Cartão (crédito/débito, taxa R$ 4,00)
 
 Recado:
 - Tolerância de 15 minutos.
 - Em caso de desistência, avise com antecedência.`;
 
-  const mensagemLembrete =
-`STUDIO VICTORIA FREITAS
+    const mensagemLembrete = `STUDIO VICTORIA FREITAS
 
-Olá, ${a.clientName}!
+Olá, ${a.clientName}! 
 
-Só passando para lembrar do seu atendimento.
+Só passando para lembrar do seu agendamento.
 
 Data: ${dataStr}
 Horário: ${horaStr}
 Serviço: ${serviceName}
+Valor: R$ ${price.toFixed(2).replace('.', ',')}
 
-Qualquer imprevisto, é só avisar.`;
+Te espero no horário combinado! 
 
-  const texto = tipo === 'confirmacao'
-    ? mensagemConfirmacao
-    : mensagemLembrete;
+Endereço:
+R. Marechal Floriano Peixoto, 448 - Sala 09, Neves
+Em cima do bar Baixo Neves
+`;
 
-  const cleanPhone = a.phone.replace(/\D/g, '');
-  const url = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(texto)}`;
-  window.open(url, '_blank');
-}
+    const texto = tipo === 'confirmacao'
+      ? mensagemConfirmacao
+      : mensagemLembrete;
 
-
+    const numero = a.phone.replace(/\D/g, '');
+    const url = `https://wa.me/55${numero}?text=${encodeURIComponent(texto)}`;
+    window.open(url, '_blank');
+  }
 
   function handleSendWhatsAppConfirm(a: Appointment) {
     sendWhatsAppMessage(a, 'confirmacao');
@@ -398,8 +448,8 @@ Qualquer imprevisto, é só avisar.`;
       description: serviceDescription.trim(),
     };
 
-    if (isEditingService && selectedServiceId) {
-      onUpdateService(selectedServiceId, data);
+    if (isEditingService && selectedService) {
+      onUpdateService(selectedService.id, data);
     } else {
       onAddService(data);
     }
@@ -434,30 +484,15 @@ Qualquer imprevisto, é só avisar.`;
     );
 
     const msg = hasAppointments
-      ? 'Este serviço possui agendamentos. Tem certeza que deseja excluir?'
+      ? 'Este serviço já possui agendamentos vinculados. Tem certeza que deseja excluir?'
       : 'Tem certeza que deseja excluir este serviço?';
 
     if (!window.confirm(msg)) return;
 
     onDeleteService(selectedService.id);
     setSelectedServiceId(null);
-    resetServiceForm();
   }
 
-  function handleSelectService(id: string) {
-    setSelectedServiceId((prev) => (prev === id ? null : id));
-  }
-
-  const [selYear, selMonth, selDay] = selectedDate.split('-').map(Number);
-  const dateObj = new Date(selYear, selMonth - 1, selDay);
-  const dateHuman = dateObj.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-
-  const calendarDays = getCalendarDays(viewMonth, selectedDate, todayStr);
   const [viewYearNumber, viewMonthNumber] = viewMonth
     .split('-')
     .map((v) => Number(v));
@@ -475,9 +510,22 @@ Qualquer imprevisto, é só avisar.`;
 
   function handleSelectDay(day: CalendarDay) {
     setSelectedDate(day.dateStr);
-    const monthStr = day.dateStr.substring(0, 7);
-    setViewMonth(monthStr);
+    setDate(day.dateStr);
   }
+
+  const calendarDays = useMemo(
+    () => generateCalendarDays(viewYearNumber, viewMonthNumber, selectedDate, todayStr),
+    [viewYearNumber, viewMonthNumber, selectedDate, todayStr],
+  );
+
+  const [selYear, selMonth, selDay] = selectedDate.split('-').map(Number);
+  const dateObj = new Date(selYear, selMonth - 1, selDay);
+  const dateHuman = dateObj.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 
   return (
     <div className="dashboard-page">
@@ -515,175 +563,190 @@ Qualquer imprevisto, é só avisar.`;
         </header>
 
         <main className="dashboard-grid">
-          {/* CARD CALENDÁRIO */}
-          <section className="card">
-            <div className="card-header">
-              <div>
-                <div className="card-title">Calendário</div>
-                <div className="card-subtitle">
-                  {countDay} agendamentos neste dia
+          {/* COLUNA ESQUERDA */}
+          <section className="left-column">
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <div className="card-title">Resumo do dia</div>
+                  <div className="card-subtitle">{dateHuman}</div>
+                </div>
+                <div className="summary-values">
+                  <div className="summary-value">
+                    <span>Agendamentos</span>
+                    <strong>{countDay}</strong>
+                  </div>
+                  <div className="summary-value">
+                    <span>Faturamento do dia</span>
+                    <strong>R$ {totalDay.toFixed(2).replace('.', ',')}</strong>
+                  </div>
                 </div>
               </div>
-              <span className="badge-money">
-                R$ {totalMonth.toFixed(2).replace('.', ',')}
-              </span>
+
+              <div className="summary-row">
+                <span>Faturamento no mês</span>
+                <span className="badge-money">
+                  R$ {totalMonth.toFixed(2).replace('.', ',')}
+                </span>
+              </div>
+
+              <div className="calendar-header-row">
+                <div className="calendar-month-label">
+                  {monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)}
+                </div>
+                <div className="calendar-nav">
+                  <button type="button" onClick={() => goMonth(-1)}>
+                    ‹
+                  </button>
+                  <button type="button" onClick={() => goMonth(1)}>
+                    ›
+                  </button>
+                </div>
+              </div>
+
+              <div className="calendar-grid">
+                <div className="calendar-weekdays">
+                  <span>Dom</span>
+                  <span>Seg</span>
+                  <span>Ter</span>
+                  <span>Qua</span>
+                  <span>Qui</span>
+                  <span>Sex</span>
+                  <span>Sáb</span>
+                </div>
+
+                <div className="calendar-weeks">
+                  {Array.from({ length: 6 }).map((_, weekIndex) => (
+                    <div key={weekIndex} className="calendar-week-row">
+                      {calendarDays
+                        .slice(weekIndex * 7, weekIndex * 7 + 7)
+                        .map((day) => {
+                          const hasAppointments = appointments.some(
+                            (a) => a.date === day.dateStr,
+                          );
+                          return (
+                            <button
+                              key={day.dateStr}
+                              type="button"
+                              className={[
+                                'calendar-day',
+                                day.isCurrentMonth ? 'is-current-month' : 'is-other-month',
+                                day.isToday ? 'is-today' : '',
+                                day.isSelected ? 'is-selected' : '',
+                                hasAppointments ? 'has-appointments' : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' ')}
+                              onClick={() => handleSelectDay(day)}
+                            >
+                              <span className="calendar-day-number">
+                                {day.dayNumber}
+                              </span>
+                              {hasAppointments && (
+                                <span className="calendar-day-dot" />
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            <div className="calendar-header-row">
-              <div className="calendar-month-label">
-                {monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)}
-              </div>
-              <div className="calendar-nav">
-                <button type="button" onClick={() => goMonth(-1)}>
-                  ‹
-                </button>
-                <button type="button" onClick={() => goMonth(1)}>
-                  ›
-                </button>
-              </div>
-            </div>
-
-            <div className="calendar-grid">
-              <div className="calendar-weekdays">
-                <span>Dom</span>
-                <span>Seg</span>
-                <span>Ter</span>
-                <span>Qua</span>
-                <span>Qui</span>
-                <span>Sex</span>
-                <span>Sáb</span>
-              </div>
-
-              <div className="calendar-weeks">
-                {Array.from({ length: 6 }).map((_, weekIndex) => (
-                  <div key={weekIndex} className="calendar-week-row">
-                    {calendarDays
-                      .slice(weekIndex * 7, weekIndex * 7 + 7)
-                      .map((day) => {
-                        const classes = ['calendar-day'];
-                        if (!day.isCurrentMonth) classes.push('calendar-day-out');
-                        if (day.isToday) classes.push('calendar-day-today');
-                        if (day.isSelected) classes.push('calendar-day-selected');
-
-                        return (
-                          <div
-                            key={day.dateStr}
-                            className={classes.join(' ')}
-                            onClick={() => handleSelectDay(day)}
-                          >
-                            {day.dayNumber}
-                          </div>
-                        );
-                      })}
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <div className="card-title">Agendamentos do dia</div>
+                  <div className="card-subtitle">
+                    {appointmentsOfDay.length === 0
+                      ? 'Nenhum horário marcado'
+                      : `${appointmentsOfDay.length} horário(s) marcados`}
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
 
-            <div className="calendar-footer">
-              <div className="calendar-footer-row">
-                <span>Total de agendamentos do dia:</span>
-                <strong>{countDay}</strong>
-              </div>
-              <div className="calendar-footer-row">
-                <span>Faturamento do dia:</span>
-                <strong>R$ {totalDay.toFixed(2).replace('.', ',')}</strong>
-              </div>
-              <div className="calendar-footer-row">
-                <span>Faturamento do mês:</span>
-                <strong>R$ {totalMonth.toFixed(2).replace('.', ',')}</strong>
-              </div>
+              {appointmentsOfDay.length === 0 ? (
+                <div className="empty-day">
+                  <div className="empty-day-icon">🕒</div>
+                  <div>Nenhum agendamento para este dia</div>
+                  <div>Clique no calendário e preencha o formulário abaixo</div>
+                </div>
+              ) : (
+                <ul className="appointments-list">
+                  {appointmentsOfDay.map((a) => {
+                    const service = services.find((s) => s.id === a.serviceId);
+                    const isAttended = !!a.attended;
+                    const value =
+                      typeof a.totalPrice === 'number' && a.totalPrice > 0
+                        ? a.totalPrice
+                        : service?.price ?? 0;
+
+                    return (
+                      <li key={a.id} className="appointment-item">
+                        <div className="appointment-top">
+                          <span>
+                            <strong>{a.time}</strong> — {a.clientName}
+                          </span>
+                          {a.phone && <span>{a.phone}</span>}
+                        </div>
+                        <div className="appointment-bottom">
+                          {service?.name || 'Serviço'} · R${' '}
+                          {value.toFixed(2).replace('.', ',')}{' '}
+                          {a.paymentMethod && `· ${a.paymentMethod}`}
+                        </div>
+                        {a.notes && (
+                          <div className="appointment-notes">
+                            Obs.: {a.notes}
+                          </div>
+                        )}
+                        <div className="appointment-actions">
+                          <button
+                            type="button"
+                            className={isAttended ? 'btn-chip success' : 'btn-chip'}
+                            onClick={() => onToggleAppointmentAttendance(a.id)}
+                          >
+                            {isAttended ? 'Atendido' : 'Marcar presença'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-chip"
+                            onClick={() => handleSendWhatsAppConfirm(a)}
+                          >
+                            WhatsApp (confirmação)
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-chip"
+                            onClick={() => handleSendWhatsAppReminder(a)}
+                          >
+                            WhatsApp (lembrete)
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-chip"
+                            onClick={() => handleEditAppointment(a)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-chip danger"
+                            onClick={() => handleDeleteAppointmentClick(a.id)}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
           </section>
 
-          {/* CARD AGENDAMENTOS + FORM */}
-          <section className="card">
-            <div className="card-header">
-              <div>
-                <div className="card-title">Agendamentos do Dia</div>
-                <div className="card-subtitle">{dateHuman}</div>
-              </div>
-            </div>
-
-            {appointmentsOfDay.length === 0 ? (
-              <div className="empty-day">
-                <div className="empty-day-icon">🕒</div>
-                <div>Nenhum agendamento para este dia</div>
-                <div>Clique no calendário e preencha o formulário abaixo</div>
-              </div>
-            ) : (
-              <ul className="appointments-list">
-                {appointmentsOfDay.map((a) => {
-                  const service = services.find((s) => s.id === a.serviceId);
-                  const isAttended = !!a.attended;
-
-                  return (
-                    <li key={a.id} className="appointment-item">
-                      <div className="appointment-top">
-                        <span>
-                          <strong>{a.time}</strong> — {a.clientName}
-                        </span>
-                        {a.phone && <span>{a.phone}</span>}
-                      </div>
-                      <div className="appointment-bottom">
-                        {service?.name || 'Serviço'} · R${' '}
-                        {service?.price
-                          ? service.price.toFixed(2).replace('.', ',')
-                          : '0,00'}{' '}
-                        {a.paymentMethod && `· ${a.paymentMethod}`}
-                      </div>
-                      {a.notes && (
-                        <div className="appointment-notes">
-                          Obs.: {a.notes}
-                        </div>
-                      )}
-                      <div className="appointment-actions-row">
-                        <button
-                          type="button"
-                          className="btn-small"
-                          onClick={() => handleEditAppointment(a)}
-                        >
-                          ✏ Editar
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-small btn-danger"
-                          onClick={() => handleDeleteAppointmentClick(a.id)}
-                        >
-                          🗑 Excluir
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-small"
-                          onClick={() => handleSendWhatsAppConfirm(a)}
-                        >
-                          💬 Confirmar
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-small"
-                          onClick={() => handleSendWhatsAppReminder(a)}
-                        >
-                          🔔 Lembrete
-                        </button>
-                        <button
-                          type="button"
-                          className={
-                            'btn-small ' + (isAttended ? 'btn-small-success' : '')
-                          }
-                          onClick={() => onToggleAppointmentAttendance(a.id)}
-                        >
-                          {isAttended
-                            ? 'Presença confirmada'
-                            : 'Confirmar presença'}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-
+          {/* COLUNA DIREITA */}
+          <section className="right-column">
             <div className="side-card" id="form-agendamento">
               <h4 className="card-title" style={{ marginTop: 16 }}>
                 {editingAppointmentId ? 'Editar agendamento' : 'Novo agendamento'}
@@ -715,49 +778,78 @@ Qualquer imprevisto, é só avisar.`;
                   </div>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Data do serviço</label>
-                  <input
-                    className="form-date"
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                  />
+                <div className="form-two-columns">
+                  <div className="form-group">
+                    <label className="form-label">Data</label>
+                    <input
+                      className="form-date"
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Horário</label>
+                    <select
+                      className="form-select"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                    >
+                      <option value="">Selecione o horário</option>
+                      {timeOptions.map((t) => {
+                        const isBusy = bookedTimesForFormDate.includes(t);
+                        return (
+                          <option key={t} value={t} disabled={isBusy}>
+                            {t} {isBusy ? '(ocupado)' : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Horário</label>
-                  <select
-                    className="form-select"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                  >
-                    <option value="">Selecione o horário</option>
-                    {timeOptions.map((t) => {
-                      const isBusy = bookedTimesForFormDate.includes(t);
-                      return (
-                        <option key={t} value={t} disabled={isBusy}>
-                          {t} {isBusy ? '(ocupado)' : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
+                  <label className="form-label">Serviços (selecione até 5)</label>
 
-                <div className="form-group">
-                  <label className="form-label">Serviço</label>
-                  <select
-                    className="form-select"
-                    value={serviceId}
-                    onChange={(e) => setServiceId(e.target.value)}
-                  >
-                    <option value="">Selecione um serviço</option>
-                    {services.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} — R$ {s.price.toFixed(2).replace('.', ',')}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="services-multi-select">
+                    {services.length === 0 ? (
+                      <span>Nenhum serviço cadastrado ainda.</span>
+                    ) : (
+                      <ul className="services-multi-select-list">
+                        {services.map((s) => {
+                          const checked = selectedServiceIds.includes(s.id);
+                          return (
+                            <li
+                              key={s.id}
+                              className={
+                                'services-multi-select-item' +
+                                (checked ? ' services-multi-select-item-selected' : '')
+                              }
+                            >
+                              <label className="services-multi-select-label">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleServiceSelection(s.id)}
+                                />
+                                <span>
+                                  {s.name} — R$ {s.price.toFixed(2).replace('.', ',')}
+                                </span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="services-multi-select-total">
+                    Total selecionado:{' '}
+                    <strong>
+                      R$ {totalSelectedServicesPrice.toFixed(2).replace('.', ',')}
+                    </strong>
+                  </div>
                 </div>
 
                 <div className="form-group">
@@ -771,7 +863,6 @@ Qualquer imprevisto, é só avisar.`;
                     <option>Pix</option>
                     <option>Dinheiro</option>
                     <option>Crédito (1x)</option>
-                    <option>Crédito (2x)</option>
                     <option>Débito</option>
                   </select>
                 </div>
@@ -780,142 +871,160 @@ Qualquer imprevisto, é só avisar.`;
                   <label className="form-label">Observações</label>
                   <textarea
                     className="form-textarea"
-                    placeholder="Ex: Cliente prefere esmalte nude, alongamento mais curto..."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Ex: prefere esmalte clarinho, cliente nova, etc."
                   />
                 </div>
 
-                <button type="submit" className="btn-primary">
-                  {editingAppointmentId ? 'Salvar alterações' : 'Salvar agendamento'}
-                </button>
+                <div className="form-actions">
+                  <button type="submit" className="btn-primary">
+                    {editingAppointmentId ? 'Salvar alterações' : 'Agendar'}
+                  </button>
+                  {editingAppointmentId && (
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={resetAppointmentForm}
+                    >
+                      Cancelar edição
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
           </section>
         </main>
-      </div>
 
-      {showServicesModal && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setShowServicesModal(false)}
-        >
-          <div
-            className="modal-sheet"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="modal-header">
-              <div>
-                <div className="modal-title">Gerenciar Serviços</div>
-                <div className="services-counter">
-                  {services.length} serviços cadastrados
+        {showServicesModal && (
+          <div className="modal-backdrop" onClick={() => setShowServicesModal(false)}>
+            <div
+              className="modal-panel"
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              <header className="modal-header">
+                <div>
+                  <div className="modal-title">Gerenciar Serviços</div>
+                  <div className="services-counter">
+                    {services.length} serviços cadastrados
+                  </div>
                 </div>
-              </div>
-            </header>
+              </header>
 
-            <div className="modal-body">
-              <form
-                id="service-form"
-                onSubmit={handleNewService}
-                className="service-form-column"
-              >
-                <label>Nome do serviço</label>
-                <input
-                  value={serviceName}
-                  onChange={(e) => setServiceName(e.target.value)}
-                  placeholder="Ex: Alongamento de fibra"
-                />
+              <div className="modal-body">
+                <form
+                  id="service-form"
+                  onSubmit={handleNewService}
+                  className="service-form-column"
+                >
+                  <label>Nome do serviço</label>
+                  <input
+                    value={serviceName}
+                    onChange={(e) => setServiceName(e.target.value)}
+                    placeholder="Ex: Alongamento de fibra"
+                  />
 
-                <label>Valor</label>
-                <input
-                  value={servicePrice}
-                  onChange={(e) => setServicePrice(e.target.value)}
-                  placeholder="Ex: 90"
-                />
+                  <label>Valor</label>
+                  <input
+                    value={servicePrice}
+                    onChange={(e) => setServicePrice(e.target.value)}
+                    placeholder="Ex: 90"
+                  />
 
-                <label>Duração (minutos)</label>
-                <input
-                  value={serviceDuration}
-                  onChange={(e) => setServiceDuration(e.target.value)}
-                  placeholder="Ex: 120"
-                />
+                  <label>Duração (minutos)</label>
+                  <input
+                    value={serviceDuration}
+                    onChange={(e) => setServiceDuration(e.target.value)}
+                    placeholder="Ex: 120"
+                  />
 
-                <label>Descrição do serviço</label>
-                <textarea
-                  value={serviceDescription}
-                  onChange={(e) => setServiceDescription(e.target.value)}
-                  placeholder="Detalhes do serviço"
-                />
+                  <label>Descrição (opcional)</label>
+                  <textarea
+                    value={serviceDescription}
+                    onChange={(e) => setServiceDescription(e.target.value)}
+                    placeholder="Ex: Manutenção incluída em até 15 dias"
+                    rows={3}
+                  />
+                </form>
 
-                <button type="submit" style={{ display: 'none' }}>
-                  hidden-submit
-                </button>
-              </form>
-
-              <ul className="services-list">
-                {services.map((s) => (
-                  <li
-                    key={s.id}
-                    className={
-                      'service-item' +
-                      (s.id === selectedServiceId ? ' service-item-selected' : '')
-                    }
-                    onClick={() => handleSelectService(s.id)}
+                <div className="services-actions-row">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleClickAddServiceButton}
                   >
-                    <div className="service-item-info">
-                      <strong>{s.name}</strong>
-                      <span className="service-item-price">
-                        R$ {s.price.toFixed(2).replace('.', ',')} · {s.duration} min
-                      </span>
-                      {s.description && (
-                        <span className="service-item-desc">{s.description}</span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-                {services.length === 0 && (
-                  <li className="service-item">
-                    <span>Nenhum serviço cadastrado ainda.</span>
-                  </li>
-                )}
-              </ul>
-            </div>
+                    {isEditingService ? 'Salvar alterações' : 'Adicionar serviço'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    disabled={!selectedService}
+                    onClick={handleClickEditService}
+                  >
+                    Editar selecionado
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    disabled={!selectedService}
+                    onClick={handleClickDeleteService}
+                  >
+                    Excluir selecionado
+                  </button>
+                </div>
 
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn-small"
-                onClick={handleClickAddServiceButton}
-              >
-                Adicionar
-              </button>
-              <button
-                type="button"
-                className="btn-small"
-                disabled={!selectedServiceId}
-                onClick={handleClickEditService}
-              >
-                ✎ Editar
-              </button>
-              <button
-                type="button"
-                className="btn-small btn-danger"
-                disabled={!selectedServiceId}
-                onClick={handleClickDeleteService}
-              >
-                🗑 Excluir
-              </button>
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={() => setShowServicesModal(false)}
-              >
-                Fechar
-              </button>
+                <ul className="services-list">
+                  {services.map((s) => (
+                    <li
+                      key={s.id}
+                      className={
+                        'service-item' +
+                        (selectedServiceId === s.id ? ' service-item-selected' : '')
+                      }
+                      onClick={() => handleSelectService(s.id)}
+                    >
+                      <div className="service-item-info">
+                        <strong>{s.name}</strong>
+                        <span className="service-item-price">
+                          R$ {s.price.toFixed(2).replace('.', ',')} · {s.duration} min
+                        </span>
+                        {s.description && (
+                          <span className="service-item-desc">{s.description}</span>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                  {services.length === 0 && (
+                    <li className="service-item">
+                      Nenhum serviço cadastrado ainda. Use o formulário acima para
+                      adicionar.
+                    </li>
+                  )}
+                </ul>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleClickAddServiceButton}
+                >
+                  {isEditingService ? 'Salvar serviço' : 'Adicionar serviço'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => setShowServicesModal(false)}
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

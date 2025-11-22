@@ -14,28 +14,29 @@ import {
   toggleAttendance,
 } from './apiSupabase';
 
-export default function App() {
+export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadAll() {
+    async function loadData() {
       try {
-        const [srv, appts] = await Promise.all([
+        const [servicesData, appointmentsData] = await Promise.all([
           fetchServices(),
           fetchAppointments(),
         ]);
-        setServices(srv);
-        setAppointments(appts);
+        setServices(servicesData);
+        setAppointments(appointmentsData);
       } catch (err) {
         console.error('Erro ao carregar dados do Supabase', err);
       } finally {
         setLoading(false);
       }
     }
-    loadAll();
+
+    loadData();
   }, []);
 
   function handleLogin(name: string) {
@@ -48,40 +49,49 @@ export default function App() {
 
   async function handleAddService(data: Omit<Service, 'id'>) {
     const created = await insertService(data);
-    setServices(prev => [...prev, created]);
+    setServices((prev) => [...prev, created]);
   }
 
   async function handleUpdateService(id: string, data: Omit<Service, 'id'>) {
     const updated = await updateService(id, data);
-    setServices(prev => prev.map(s => (s.id === id ? updated : s)));
+    setServices((prev) => prev.map((s) => (s.id === id ? updated : s)));
   }
 
   async function handleDeleteService(id: string) {
     await deleteService(id);
-    setServices(prev => prev.filter(s => s.id !== id));
+    setServices((prev) => prev.filter((s) => s.id !== id));
   }
 
-  async function handleAddAppointment(data: Omit<Appointment, 'id'>) {
-    const created = await insertAppointment(data);
-    setAppointments(prev => [...prev, created]);
+  async function handleAddAppointment(
+    data: Omit<Appointment, 'id'>,
+    serviceIds: string[],
+  ) {
+    const created = await insertAppointment(data, serviceIds);
+    setAppointments((prev) => [...prev, created]);
   }
 
-  async function handleUpdateAppointment(id: string, data: Omit<Appointment, 'id'>) {
-    const updated = await updateAppointment(id, data);
-    setAppointments(prev => prev.map(a => (a.id === id ? updated : a)));
+  async function handleUpdateAppointment(
+    id: string,
+    data: Omit<Appointment, 'id'>,
+    serviceIds: string[],
+  ) {
+    const updated = await updateAppointment(id, data, serviceIds);
+    setAppointments((prev) => prev.map((a) => (a.id === id ? updated : a)));
   }
 
   async function handleDeleteAppointment(id: string) {
     await deleteAppointment(id);
-    setAppointments(prev => prev.filter(a => a.id !== id));
+    setAppointments((prev) => prev.filter((a) => a.id !== id));
   }
 
   async function handleToggleAppointmentAttendance(id: string) {
-    setAppointments(prev =>
-      prev.map(a => (a.id === id ? { ...a, attended: !a.attended } : a)),
+    setAppointments((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, attended: !a.attended } : a)),
     );
-    const current = appointments.find(a => a.id === id);
+
+    const current = appointments.find((a) => a.id === id);
     const newValue = !(current?.attended ?? false);
+
     try {
       await toggleAttendance(id, newValue);
     } catch (err) {
@@ -113,3 +123,5 @@ export default function App() {
     />
   );
 }
+
+export default App;

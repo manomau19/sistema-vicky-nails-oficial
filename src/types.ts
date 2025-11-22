@@ -15,6 +15,7 @@ export type Appointment = {
   serviceId: string;
   paymentMethod: string;
   notes: string;
+  totalPrice: number;    // soma dos serviços do atendimento
   attended?: boolean;    // presença confirmada
 };
 
