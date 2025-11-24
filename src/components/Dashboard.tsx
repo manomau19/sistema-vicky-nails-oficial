@@ -101,7 +101,7 @@ function generateCalendarDays(
 
 function generateTimeOptions(): string[] {
   const times: string[] = [];
-  const startHour = 9;
+  const startHour = 7;
   const endHour = 19;
   const intervalMinutes = 30;
 
