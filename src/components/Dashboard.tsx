@@ -432,6 +432,12 @@ Em cima do bar Baixo Neves
     setServiceDescription('');
     setIsEditingService(false);
   }
+    function handleSelectService(id: string) {
+    setSelectedServiceId((prev) => (prev === id ? null : id));
+    // sempre que clicar num serviço da lista, saímos do modo edição
+    setIsEditingService(false);
+  }
+
 
   function handleNewService(e: FormEvent) {
     e.preventDefault();
